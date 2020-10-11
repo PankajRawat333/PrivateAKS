@@ -1,0 +1,493 @@
+client_id: ""
+client_secret: ""
+tenant_id: &tenant_id ""
+keyvault_name: &keyvault_name ""
+
+imageCredentials:
+  registry: ""
+  username: ""
+  password: ""
+
+clc-parser-cef:
+  enabled: true
+  logstash:
+    enabled: true
+    image:
+      pullSecrets:
+        - name: "clc-docker-secrets"  
+    nameOverride: clc-parser-cef
+    replicaCount: 1
+    keyvault:
+      enabled: true
+      volumeMounts:
+      - name: secrets-store-inline
+        mountPath: /kvmnt
+        readOnly: true 
+      volumes:
+        - name: secrets-store-inline
+          flexVolume:
+            driver: "azure/kv"
+            secretRef:
+              name: clc-kv-secret
+            options:
+              usepodidentity: "false"
+              keyvaultname: *keyvault_name
+              keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCehPrimarySasKey;CLCehBootstrapServer;CLCehConsumerGroup;CLCstoragePrimaryEndpoint"           
+              keyvaultobjecttypes: "secret;secret;secret;secret;secret"
+              tenantid: *tenant_id
+    psp:
+      enabled: true
+      name: worker-role              
+    livenessProbe:
+      httpGet:
+        path: /
+        port: monitor
+      initialDelaySeconds: 360
+      # periodSeconds: 30
+      # timeoutSeconds: 30
+      # failureThreshold: 6
+      # successThreshold: 1
+    readinessProbe:
+      httpGet:
+        path: /
+        port: monitor
+      initialDelaySeconds: 240
+    filters:
+      main: |-
+        filter {
+          metrics {
+            meter => "events"
+            add_tag => "metric"
+          }
+          mutate {
+            remove_field => [ "port", "host", "@metadata" ]
+          }
+          if [type] == "syslog" {
+            mutate {
+              remove_field => [ "type" ]
+            }
+          }         
+          if [_dt] {
+
+          }
+          else {
+            mutate {
+              add_field => { "_dt" => "CLCCEF" }
+            }
+          }
+        }
+    outputs:
+      main: |-
+        output {
+          if "metric" in [tags] {
+            stdout {
+              codec => line {
+                format => "rate: %{[events][rate_1m]}"
+              }
+            }
+          } 
+          else {   
+            stdout {
+              codec => "rubydebug"
+            }              
+            kafka {
+              codec => json
+              topic_id => "ready"
+              bootstrap_servers => "${CLCEHBOOTSTRAPSERVER}"
+              security_protocol => "SASL_SSL"
+              sasl_mechanism => "PLAIN"
+              sasl_jaas_config => "org.apache.kafka.common.security.plain.PlainLoginModule required username='$ConnectionString' password='${CLCEHPRIMARYCONNECTIONSTRING}';"
+            }
+          }
+        }        
+clc-loader-bulk:
+  enabled: true
+  logstash:
+    enabled: true
+    replicaCount: 1
+    image:
+      pullSecrets:
+        - name: "clc-docker-secrets"    
+    nameOverride: clc-loader-bulk
+    keyvault:
+      enabled: true
+      volumeMounts:
+      - name: secrets-store-inline
+        mountPath: /kvmnt
+        readOnly: true 
+      volumes:
+        - name: secrets-store-inline
+          flexVolume:
+            driver: "azure/kv"
+            secretRef:
+              name: clc-kv-secret
+            options:
+              usepodidentity: "false"
+              keyvaultname: *keyvault_name
+              keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCehPrimarySasKey;CLClaOmsWorkspaceId;CLClaClientAuthKey;CLClaLogTypeName;CLCehConsumerGroup;CLCstoragePrimaryEndpoint"           
+              keyvaultobjecttypes: "secret;secret;secret;secret;secret;secret;secret"
+              tenantid: *tenant_id
+    psp:
+      enabled: true
+      name: worker-role
+
+clc-receiver-cybereason:
+  enabled: true
+  logstash:
+    enabled: true
+    replicaCount: 1
+    livenessProbe:
+      httpGet:
+        path: /
+        port: monitor
+      initialDelaySeconds: 360
+    readinessProbe:
+      httpGet:
+        path: /
+        port: monitor
+      initialDelaySeconds: 240
+    image:
+      pullSecrets:
+        - name: "clc-docker-secrets"       
+    service:
+      type: ClusterIP
+      ports:
+        syslog-tcp:
+          port: 1515
+          targetPort: syslog-tcp
+          protocol: TCP
+    ports:
+      - name: syslog-tcp
+        containerPort: 1515
+        protocol: TCP          
+    inputs:
+      main: |-
+        input {
+          tcp {
+            port => 1515
+            type => syslog
+            ssl_verify => false
+            ssl_enable => true
+            ssl_key => "/kvmnt/CLCTLSKey"
+            ssl_cert => "/kvmnt/CLCTLSCertificate"
+          }
+        }
+    filters:
+      main: |-
+        filter {
+          metrics {
+            meter => "events"
+            add_tag => "metric"
+          }
+          mutate {
+            add_field => { "_dt" => "CLCEDR" }
+          }
+        }
+    outputs:
+      main: |-
+        output {
+          if "metric" in [tags] {
+            stdout {
+              codec => line {
+                format => "rate: %{[events][rate_1m]}"
+              }
+            }
+          } 
+          else {       
+            kafka {
+              topic_id => "cef"
+              bootstrap_servers => "${CLCEHBOOTSTRAPSERVER}"
+              security_protocol => "SASL_SSL"
+              sasl_mechanism => "PLAIN"
+              sasl_jaas_config => "org.apache.kafka.common.security.plain.PlainLoginModule required username='$ConnectionString' password='${CLCEHPRIMARYCONNECTIONSTRING}';"
+            }
+          }
+        }        
+    keyvault:
+      enabled: true
+      volumeMounts:
+      - name: secrets-store-inline
+        mountPath: /kvmnt
+        readOnly: true 
+      volumes:
+        - name: secrets-store-inline
+          flexVolume:
+            driver: "azure/kv"
+            secretRef:
+              name: clc-kv-secret
+            options:
+              usepodidentity: "false"
+              keyvaultname: *keyvault_name
+              keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCehBootstrapServer;CLCTLSCertificate;CLCTLSKey;CLCTLSCA"           
+              keyvaultobjecttypes: "secret;secret;secret;secret;secret"
+              tenantid: *tenant_id        
+
+clc-receiver-syslog:
+  enabled: false
+
+logstash:
+  enabled: false
+
+clc-receiver-eh2eh:
+  enabled: true
+  logstash:
+    enabled: true
+    replicaCount: 1
+    image:
+      pullSecrets:
+        - name: "clc-docker-secrets"    
+    nameOverride: clc-receiver-eh2eh
+    keyvault:
+      enabled: true
+      volumeMounts:
+      - name: secrets-store-inline
+        mountPath: /kvmnt
+        readOnly: true 
+      volumes:
+        - name: secrets-store-inline
+          flexVolume:
+            driver: "azure/kv"
+            secretRef:
+              name: clc-kv-secret
+            options:
+              usepodidentity: "false"
+              keyvaultname: *keyvault_name
+              keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCehPrimaryConnectionString_ext1;CLCehPrimaryConnectionString_ext2;CLCehConsumerGroup_ext;CLCstoragePrimaryEndpoint;CLCehBootstrapServer"           
+              keyvaultobjecttypes: "secret;secret;secret;secret;secret;secret"
+              tenantid: *tenant_id
+    psp:
+      enabled: true
+      name: worker-role
+    inputs:
+      main: |-
+        input {
+          azure_event_hubs {
+            event_hub_connections => ["${CLCEHPRIMARYCONNECTIONSTRING_EXT1};EntityPath=cef","${CLCEHPRIMARYCONNECTIONSTRING_EXT2};EntityPath=cef"]
+            storage_connection => "${CLCSTORAGEPRIMARYENDPOINT}"
+            storage_container => "offsets-eh2eh"          
+            threads => 33
+            decorate_events => true
+            consumer_group => "${CLCEHCONSUMERGROUP_EXT}"
+            codec => "json"
+            max_batch_size => 300
+          }
+        }
+    filters:
+      main: |-
+        filter {
+          metrics {
+            meter => "events"
+            add_tag => "metric"
+          }
+          mutate {
+            copy => { "[@metadata]" => "_metadata" }
+          }
+        }        
+    outputs:
+      main: |-
+        output {
+          if "metric" in [tags] {
+            stdout {
+              codec => line {
+                format => "rate: %{[events][rate_1m]}"
+              }
+            }
+          } 
+          else {   
+            #stdout {
+            #  codec => "rubydebug"
+            #}              
+            kafka {
+              codec => json
+              topic_id => "ready"
+              bootstrap_servers => "${CLCEHBOOTSTRAPSERVER}"
+              security_protocol => "SASL_SSL"
+              sasl_mechanism => "PLAIN"
+              sasl_jaas_config => "org.apache.kafka.common.security.plain.PlainLoginModule required username='$ConnectionString' password='${CLCEHPRIMARYCONNECTIONSTRING}';"
+            }
+          }
+        }
+clc-receiver-ls2ls:
+  enabled: false
+  logstash:
+    enabled: false
+    main: |-
+      input {
+        lumberjack {
+          port => 9090
+        }
+      }
+    filters:
+      main: |-
+        filter {
+          metrics {
+            meter => "events"
+            add_tag => "metric"
+          }
+          mutate {
+            copy => { "[@metadata]" => "_metadata" }
+          }
+        }        
+    outputs:
+      main: |-
+        output {
+          if "metric" in [tags] {
+            stdout {
+              codec => line {
+                format => "rate: %{[events][rate_1m]}"
+              }
+            }
+          } 
+          else {   
+            #stdout {
+            #  codec => "rubydebug"
+            #}              
+            lumberjack {
+              
+            }
+          }
+        }
+
+clc-collector-akamai-siem:
+  enabled: false
+  replicaCount: 1  
+  imagePullSecrets:
+    - name: "clc-docker-secrets"    
+  keyvault:
+    enabled: true
+    volumeMounts:
+    - name: secrets-store-inline
+      mountPath: /kvmnt
+      readOnly: true 
+    volumes:
+      - name: secrets-store-inline
+        flexVolume:
+          driver: "azure/kv"
+          secretRef:
+            name: clc-kv-secret
+          options:
+            usepodidentity: "false"
+            keyvaultname: *keyvault_name
+            keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCstorageAccountName;CLCstoragePrimaryAccessKey"           
+            keyvaultobjecttypes: "secret;secret;secret"
+            keyvaultobjectaliases: "EVENT_HUB_ENDPOINT;AZURE_BLOB_ACCOUNT_NAME;AZURE_BLOB_ACCOUNT_KEY"
+            tenantid: *tenant_id
+  extraEnv:
+  - name: "OFFSET_CONTAINER_NAME"
+    value: "offsets"
+  - name: "BACKLOG_CONTAINER_NAME"
+    value: "backlog"
+  - name: "OFFSET_BLOB_NAME"
+    value: "offset-akamai-siem"
+  - name: "BACKLOG_BLOB_NAME"
+    value: "backlog-akamai-siem"
+  - name: "EVENT_HUB_NAME"
+    value: "parsed"
+  - name: "AKAMAI_CONFIG_IDS"
+    value: ""
+  - name: "AKAMAI_CLIENT_TOKEN"
+    value: ""
+  - name: "AKAMAI_CLIENT_SECRET"
+    value: ""
+  - name: "AKAMAI_ACCESS_TOKEN"
+    value: ""
+  - name: "AKAMAI_HOST"
+    value: ""
+ 
+clc-collector-crowdstrike-data-replicator:
+  enabled: false
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  replicaCount: 1  
+  imagePullSecrets:
+    - name: "clc-docker-secrets"    
+  keyvault:
+    enabled: true
+    volumeMounts:
+    - name: secrets-store-inline
+      mountPath: /kvmnt
+      readOnly: true 
+    volumes:
+      - name: secrets-store-inline
+        flexVolume:
+          driver: "azure/kv"
+          secretRef:
+            name: clc-kv-secret
+          options:
+            usepodidentity: "false"
+            keyvaultname: *keyvault_name
+            keyvaultobjectnames: "CLCCSRPehPrimaryConnectionString;CLCCDRAwsAccessKeyId;CLCCDRAwsSecretAccessKey;CLCCDRSQSUrl;CLCCDRAwsRegion"           
+            keyvaultobjecttypes: "secret;secret;secret;secret;secret"
+            keyvaultobjectaliases: "EVENT_HUB_ENDPOINT;AWS_ACCESS_KEY_ID;AWS_SECRET_ACCESS_KEY;SQS_URL;AWS_REGION"
+            tenantid: *tenant_id
+  extraEnv:
+  - name: "EVENT_HUB_NAME"
+    value: "ready"  
+  - name: "DST_GZ_PATH"
+    value: "/tmp"
+  - name: "DST_PATH"
+    value: "/tmp"
+  - name: "DESTINATION_TABLE"
+    value: "CLCCrowdstrikeDataReplicator"
+clc-collector-crowdstrike-falcon:
+  enabled: false
+clc-collector-trendmicro-apex:
+  enabled: false
+  replicaCount: 1  
+  imagePullSecrets:
+    - name: "clc-docker-secrets"    
+  keyvault:
+    enabled: true
+    volumeMounts:
+    - name: secrets-store-inline
+      mountPath: /kvmnt
+      readOnly: true 
+    volumes:
+      - name: secrets-store-inline
+        flexVolume:
+          driver: "azure/kv"
+          secretRef:
+            name: clc-kv-secret
+          options:
+            usepodidentity: "false"
+            keyvaultname: *keyvault_name
+            keyvaultobjectnames: "CLCehPrimaryConnectionString;CLCstorageAccountName;CLCstoragePrimaryAccessKey;CLCTrendMicroApexKey;CLCTrendMicroApexAppId"           
+            keyvaultobjecttypes: "secret;secret;secret;secret;secret"
+            keyvaultobjectaliases: "EVENT_HUB_ENDPOINT;AZURE_BLOB_ACCOUNT_NAME;AZURE_BLOB_ACCOUNT_KEY;TRENDMICRO_KEY;TRENDMICRO_APPID"
+            tenantid: *tenant_id
+  extraEnv:
+  - name: "OFFSET_CONTAINER_NAME"
+    value: "offsets"
+  - name: "BACKLOG_CONTAINER_NAME"
+    value: "backlog"
+  - name: "OFFSET_BLOB_NAME"
+    value: "offset-trendmicro-apex"
+  - name: "BACKLOG_BLOB_NAME"
+    value: "backlog-trendmicro-apex"    
+  - name: "EVENT_HUB_NAME"
+    value: "ready"
+  - name: "DESTINATION_TABLE"
+    value: "CLCTrendMicroApex"    
+    
+ingress:
+  enabled: true
+  defaultBackend:
+    enabled: false
+  controller:
+    resources:
+      requests:
+        memory: 2Gi
+      limits:
+        memory: 3Gi
+    service:
+      enableHttp: false
+      enableHttps: false
+    annotations: 
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+  tcp:
+    "5510": "default/clc-receiver-cybereason:1515"

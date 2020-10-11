@@ -1,0 +1,60 @@
+apiVersion: v2
+description: Cyberproof CLC Deployment
+name: clc
+version: 1.1.71-axa
+appVersion: 1.1.0
+dependencies:
+#- name: aad-pod-identity
+#  version: "1.x"
+#  repository: "https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts"  
+- name: clc-parser-cef
+  version: "1.0.49"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-parser-cef.enabled
+- name: clc-receiver-cef
+  version: "1.0.6"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-receiver-cef.enabled  
+- name: clc-receiver-syslog
+  version: "0.0.5"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-receiver-syslog.enabled    
+- name: clc-loader-bulk
+  version: "1.0.43"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-loader-bulk.enabled
+- name: clc-collector-akamai-siem
+  version: "1.0.6"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-collector-akamai-siem.enabled
+- name: clc-collector-crowdstrike-data-replicator
+  version: "1.0.3"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-collector-crowdstrike-data-replicator.enabled
+- name: clc-collector-crowdstrike-falcon
+  version: "1.0.0"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-collector-crowdstrike-falcon.enabled  
+- name: clc-collector-trendmicro-apex
+  version: "1.0.0"
+  repository: "http://helm.cyberproof.io:8080"
+  condition: clc-collector-trendmicro-apex.enabled    
+- name: logstash
+  version: "2.x"
+  repository: "http://helm.cyberproof.io:8080"
+  alias: clc-receiver-eh2eh
+  condition: clc-receiver-eh2eh.enabled
+- name: logstash
+  version: "2.x"
+  repository: "http://helm.cyberproof.io:8080"    
+  alias: clc-receiver-ls2ls
+  condition: clc-receiver-ls2ls.enabled
+- name: nginx-ingress
+  version: "1.41.3"
+  repository: "https://kubernetes-charts.storage.googleapis.com/"
+  alias: ingress
+  condition: ingress.enabled  
+- name: clc-receiver-cef
+  version: "1.0.6"
+  repository: "http://helm.cyberproof.io:8080"
+  alias: clc-receiver-cybereason 

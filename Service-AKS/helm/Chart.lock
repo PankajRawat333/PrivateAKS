@@ -1,0 +1,30 @@
+dependencies:
+- name: clc-parser-cef
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.49
+- name: clc-receiver-cef
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.6
+- name: clc-receiver-syslog
+  repository: http://helm.cyberproof.io:8080
+  version: 0.0.5
+- name: clc-loader-bulk
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.43
+- name: clc-collector-akamai-siem
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.6
+- name: clc-collector-crowdstrike-data-replicator
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.3
+- name: clc-collector-crowdstrike-falcon
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.0
+- name: clc-collector-trendmicro-apex
+  repository: http://helm.cyberproof.io:8080
+  version: 1.0.0
+- name: nginx-ingress
+  repository: https://kubernetes-charts.storage.googleapis.com/
+  version: 1.41.3
+digest: sha256:a5997010729435978ff67537100bb38e9437910f8f39f72a7448bae3bf180de7
+generated: "2020-09-07T13:49:56.038482117+03:00"
